@@ -294,6 +294,27 @@ change_key(pam_handle_t *pamh, const char *ds_name,
 		zfs_close(ds);
 		return (-1);
 	}
+	uint64_t keyformat = zfs_prop_get_int(ds, ZFS_PROP_KEYFORMAT);
+	if (keyformat) {
+		char prop_keylocation[MAXNAMELEN];
+		if (zfs_prop_get(ds, ZFS_PROP_KEYLOCATION, prop_keylocation,
+		    sizeof (prop_keylocation), NULL, NULL, 0, B_TRUE) != 0) {
+			pam_syslog(pamh, LOG_ERR,
+			    "Failed to get keylocation for '%s'", ds_name);
+			pw_free(key);
+			nvlist_free(nvlist);
+			zfs_close(ds);
+			return (-1);
+		}
+		/* derive keyfile from uri scheme */
+		if (strncmp(prop_keylocation, "file://", 7) == 0) {
+			char *fp = prop_keylocation + 7;
+			if (remove(fp) != 0) {
+				pam_syslog(pamh, LOG_ERR,
+				    "Failed to remove keyfile '%s'", fp);
+			}
+		}
+	}
 	if (nvlist_add_string(nvlist,
 	    zfs_prop_to_name(ZFS_PROP_KEYLOCATION),
 	    "prompt")) {
