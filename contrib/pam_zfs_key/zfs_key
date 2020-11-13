@@ -10,4 +10,4 @@ Session:
 	optional	pam_zfs_key.so
 Password-Type: Additional
 Password:
-	optional	pam_zfs_key.so
+	required	pam_zfs_key.so

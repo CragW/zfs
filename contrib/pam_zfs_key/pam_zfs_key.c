@@ -278,6 +278,25 @@ is_key_loaded(pam_handle_t *pamh, const char *ds_name)
 	return (keystatus != ZFS_KEYSTATUS_UNAVAILABLE);
 }
 
+static boolean_t
+zfs_load_key_attempt(pam_handle_t *pamh, const char *ds_name)
+{
+	zfs_handle_t *ds = zfs_open(g_zfs, ds_name, ZFS_TYPE_FILESYSTEM);
+	if (ds == NULL) {
+		pam_syslog(pamh, LOG_ERR, "dataset %s not found", ds_name);
+		return (B_FALSE);
+	}
+	if (zfs_crypto_load_key(ds, B_FALSE, NULL) != 0) {
+		zfs_close(ds);
+		return (B_FALSE);
+	}
+	/* refresh the properties so the new keystatus is visible */
+	zfs_refresh_properties(ds);
+
+	zfs_close(ds);
+	return (B_TRUE);
+}
+
 static int
 change_key(pam_handle_t *pamh, const char *ds_name,
     const char *passphrase)
@@ -649,11 +668,21 @@ pam_sm_chauthtok(pam_handle_t *pamh, int flags,
 			zfs_key_config_free(&config);
 			return (PAM_SERVICE_ERR);
 		}
+		if (! key_loaded) {
+			pam_syslog(pamh, LOG_WARNING,
+			    "key not loaded, trying again");
+			if (!zfs_load_key_attempt(pamh, dataset)) {
+				free(dataset);
+				pam_zfs_free();
+				zfs_key_config_free(&config);
+				return (PAM_AUTHTOK_ERR);
+			}
+			key_loaded = is_key_loaded(pamh, dataset);
+		}
 		free(dataset);
 		pam_zfs_free();
 		if (! key_loaded) {
-			pam_syslog(pamh, LOG_ERR,
-			    "key not loaded, returning try_again");
+			pam_syslog(pamh, LOG_ERR, "key not loaded");
 			zfs_key_config_free(&config);
 			return (PAM_PERM_DENIED);
 		}
